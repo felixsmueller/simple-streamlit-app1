@@ -1,19 +1,21 @@
-# simple_app.py
-
+'''
+This file contains the streamlit application to get the top restaurants for a user.
+As input we provide the user_id and as output we provide the top 5 restaurants including a score.
+'''
 import streamlit as st
 import json
+import urllib.request
+import json
+import os
+import ssl
+import pandas as pd
 
-def get_rating(user_id, place_id):
+def get_top_restaurant_recommendations(user_id):
     '''
-    This function gets the rating for the current user (defined by user_id) for a given restaurant (defined by place_id).
-    :param user_id:
-    :param place_id:
+    This function gets for the current user (defined by user_id) the top restaurant recommendations.
+    :param user_id: The user id for which we provide a rating. If the user is a new user then use a random very high user id.
     :return:
     '''
-    import urllib.request
-    import json
-    import os
-    import ssl
 
     def allowSelfSignedHttps(allowed):
         # bypass the server certificate verification on client side
@@ -22,14 +24,14 @@ def get_rating(user_id, place_id):
 
     allowSelfSignedHttps(True)  # this line is needed if you use self-signed certificate in your scoring service.
 
-    # The parameters for the webrequest. The only parameters that matter are: userId, placeID,
+    # The parameters for the webrequest. TODO: For new users we may allow to specify other parameters in future.
     data = {
         "Inputs": {
             "WebServiceInput0":
                 [
                     {
                         'userID':user_id,
-                        'placeID': place_id,
+                        'placeID': "-1",
                         'rating': "-1",
                     },
                 ],
@@ -87,27 +89,26 @@ def get_rating(user_id, place_id):
         }
     }
 
-    body = str.encode(json.dumps(data))
-
-    url = 'http://20.203.142.7:80/api/v1/service/mulx-wide-and-deep-recommender/score'
+    body    = str.encode(json.dumps(data))
+    url     = 'http://20.203.142.7:80/api/v1/service/mulx-wide-and-deep-recommender/score'
     api_key = 'xph52KOF2ViNMiFSt2MdjAuPhsvTtDvg'  # Replace this with the API key for the web service
     headers = {'Content-Type': 'application/json', 'Authorization': ('Bearer ' + api_key)}
 
+    #Do the actual webrequest:
     req = urllib.request.Request(url, body, headers)
 
+    #Try to get the response:
     try:
         response = urllib.request.urlopen(req)
-
         result = response.read()
         print(result)
     except urllib.error.HTTPError as error:
         print("The request failed with status code: " + str(error.code))
-
         # Print the headers - they include the requert ID and the timestamp, which are useful for debugging the failure
         print(error.info())
         print(json.loads(error.read().decode("utf8", 'ignore')))
-
     return convert_bytes_to_dict(result)
+
 
 def convert_bytes_to_dict(bytes_value):
     # Decode UTF-8 bytes to Unicode, and convert single quotes
@@ -118,18 +119,23 @@ def convert_bytes_to_dict(bytes_value):
     res = json.loads(my_json)
     return res
 
-
+#Print out the title of the app:
 st.title("Restaurant Recommender")
 
+#Ask for th euser Id to be predicted
 st.header("Enter User ID")
-user_id     = st.text_input('User Id', 'U1001', help='Bitte user Id eingeben falls verfügbar.')
-
-st.header("Enter Restaurant ID")
-place_id     = st.text_input('Restaurant Id', '135085', help='Bitte user Id vom Restaurant eingeben.')
-
+user_id     = st.text_input('User Id', 'U1001', help='Please enter the user id. If it is a new user then use a new very high random user id')
 
 if st.button('Get Recommendation'):
-    res     = get_rating(user_id, place_id)
-    rating  = res['Results']['WebServiceOutput0'][0]['Scored Rating']
-    st.write('Rating:', rating)
+    #Get the prediction form the azure webservice:
+    res         = get_top_restaurant_recommendations(user_id)
+    #Display the Restaurant ratings including the prediction score (in predicted rating):
+    ratings     = res['Results']['WebServiceOutput0'][0]
+    restaurants = []
+    scores      = []
+    for i in range(1,int(len(ratings)/2)+1):
+        restaurants.append(ratings['Recommended Item '+str(i)])
+        scores.append(round(ratings['Predicted Rating '+str(i)],2))
+    #Print the results as table:
+    st.table(pd.DataFrame({'Restaurant':restaurants, 'Score':scores}))
 
